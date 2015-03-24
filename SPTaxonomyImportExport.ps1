@@ -1,4 +1,9 @@
-﻿function get-SPTagsFromPage {
+﻿#region Import Methods
+
+#endregion
+
+#region Export Methods
+function get-SPTagsFromPage {
 	param(
 		[Parameter(Mandatory = $true)]
 		[Microsoft.SharePoint.SPListItem]$PageItem
@@ -31,6 +36,8 @@ function Get-SPPagesFromWeb {
 		}
 	} else {
 		$pages = $null
+		
+		
 	}
 	
 	return $pages
@@ -61,5 +68,7 @@ function Export-SPTaxonomy {
 	
 	Export-Clixml -Depth 9 -InputObject $webs -Path $OutputXmlPath
 }
+
+#endregion
 
 Export-SPTaxonomy -SiteUrl http://qa.oakgov.com/health -OutputXmlPath D:\health-tags.xml
