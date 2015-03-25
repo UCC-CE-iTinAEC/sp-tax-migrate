@@ -1,9 +1,96 @@
-﻿#region Import Methods
+#region Import Methods
+function PromptFor-File {
+	param(
+		[string]$Type = "Open",
+		[string]$Title = "Select File",
+		[string]$FileName = $null,
+		[String[]]$FileTypes,
+		[switch]$RestoreDirectory,
+		[IO.DirectoryInfo]$InitialDirectory = $null
+	)
+	
+	[Void][System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms")
+	if($FileTypes) {
+		$FileTypes | % {
+			$filter += $_.ToUpper() + " Files|*.$_|"
+		}
+		$filter = $filter.TrimEnd("|")
+	} else {
+		$filter = "All Files|*.*"
+	}
+	
+	switch($Type) {
+		"Open" {
+			$dialog = New-Object System.Windows.Forms.OpenFileDialog
+			$dialog.Multiselect = $false
+		}
+		"Save" {
+			$dialog = New-Object System.Windows.Forms.SaveFileDialog
+		}
+	}
+	
+	$dialog.FileName = $FileName
+	$dialog.Title = $Title
+	$dialog.Filter = $filter
+	$dialog.RestoreDirectory = $RestoreDirectory
+	$dialog.InitialDirectory = $InitialDirectory.Fullname
+	$dialog.ShowHelp = $true
+	if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+		return $dialog.FileName
+	} else {
+		return $null
+	}
+}
+
+function Import-TermSet {
+	param(
+		[Parameter(Mandatory = $true)]
+		[PSObject]$TermSet,
+		[Parameter(Mandatory = $true)]
+		[Microsoft.SharePoint.SPSite]$Site
+	)
+	
+	$txSession = Get-SPTaxonomySession -Site $Site
+	$txSiteGroup = $txSession.DefaultSiteCollectionTermStore.GetSiteCollectionGroup($Site)
+	$txTermSet = $txSiteGroup.CreateTermSet($TermSet.Name)
+	
+}
+
+function Import-SPTaxonomy {
+	param(
+		[Parameter(Mandatory = $true)]
+		[string]$SiteUrl,
+		[Parameter(Mandatory = $false)]
+		[string]$Path
+	)
+	
+	if (-not $Path) {
+	    # prompt user for location of xml file
+		$Path = PromptFor-File -FileName "*.xml" -FileTypes xml -InitialDirectory $PWD.Path -Type Open -Title "Select XML File"
+	}
+	$objImport = Import-Clixml -Path $Path
+	$Site = Get-SPSite -Identity $SiteUrl
+	if ($objImport.TermSet) {
+		Import-TermSet -TermSet $objImport.TermSet
+	} else {
+		Write-Error "No TermSet Found. Now exiting!"
+		$Site.Dispose()
+		return;
+	}
+	
+	if ($objImport.Webs) {
+	} else {
+		Write-Error "No Webs Found. Now exiting!"
+		$Site.Dispose()
+		return;
+	}
+	$Site.Dispose()
+}
 
 #endregion
 
 #region Export Methods
-function get-SPTagsFromPage {
+function Get-SPTagsFromPage {
 	param(
 		[Parameter(Mandatory = $true)]
 		[Microsoft.SharePoint.SPListItem]$PageItem
@@ -114,4 +201,4 @@ function Export-SPTaxonomy {
 
 #endregion
 
-Export-SPTaxonomy -SiteUrl http://qa.oakgov.com/health -TermSetName "Health Tags" -OutputXmlPath D:\health-tags.xml
+# Export-SPTaxonomy -SiteUrl http://qa.oakgov.com/health -TermSetName "Health Tags" -OutputXmlPath D:\health-tags.xml
