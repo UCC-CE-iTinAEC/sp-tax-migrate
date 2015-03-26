@@ -42,6 +42,24 @@ function PromptFor-File {
 	}
 }
 
+function Import-Terms {
+	param(
+		[Parameter(Mandatory = $true)]
+		$Parent,
+		[Parameter(Mandatory = $true)]
+		[System.Collections.ArrayList]$Terms
+	)
+	$Terms | % {
+		$Term = $_
+		$txTerm = $Parent.CreateTerm($Term.Name, 1033, $Term.Id)
+		$txTerm.IsAvailableForTagging = $Term.IsAvailableForTagging
+		if ($Term.Terms.Count -gt 0) {
+			Import-Terms -Parent $txTerm -Terms $Term.Terms
+		}
+	}
+	
+}
+
 function Import-TermSet {
 	param(
 		[Parameter(Mandatory = $true)]
@@ -51,9 +69,48 @@ function Import-TermSet {
 	)
 	
 	$txSession = Get-SPTaxonomySession -Site $Site
-	$txSiteGroup = $txSession.DefaultSiteCollectionTermStore.GetSiteCollectionGroup($Site)
+	$txTermStore = $txSession.DefaultSiteCollectionTermStore
+	$txSiteGroup = $txTermStore.GetSiteCollectionGroup($Site)
 	$txTermSet = $txSiteGroup.CreateTermSet($TermSet.Name)
+	Import-Terms -Parent $txTermSet -Terms $TermSet.Terms
+	$txTermStore.CommitAll()
+}
+
+function Import-PageTags {
+	param(
+		[Parameter(Mandatory = $true)]
+		[Microsoft.SharePoint.SPFile]$File
+	)
+	if ([Microsoft.SharePoint.Publishing.PublishingWeb]::IsPublishingWeb($File.Web)) {
+		$PubWeb = [Microsoft.SharePoint.Publishing.PublishingWeb]::GetPublishingWeb($File.Web)
+		if ([Microsoft.SharePoint.Publishing.PublishingPage]::IsPublishingPage($File.Item)) {
+			$PubFile = [Microsoft.SharePoint.Publishing.PublishingPage]::GetPublishingPage($File.Item)
+			$Item = $File.Item
+			if ($Item.
+		}
+	}
 	
+}
+
+function Import-Web {
+	param(
+		[Parameter(Mandatory = $true)]
+		[Microsoft.SharePoint.SPSite]$Site,
+		[Parameter(Mandatory = $true)]
+		[PSObject]$Web
+	)
+	
+	$spWeb = $Site.OpenWeb($Web.ServerRelativeUrl)
+	
+	$Web.Pages | % {
+		$Page = $_
+		if ($Page.Tags) {
+			# process page
+			$SPFile = $spWeb.GetFile($Page.Url)
+		}
+	}
+	
+	$spWeb.Dispose()
 }
 
 function Import-SPTaxonomy {
@@ -71,7 +128,7 @@ function Import-SPTaxonomy {
 	$objImport = Import-Clixml -Path $Path
 	$Site = Get-SPSite -Identity $SiteUrl
 	if ($objImport.TermSet) {
-		Import-TermSet -TermSet $objImport.TermSet
+		Import-TermSet -TermSet $objImport.TermSet -Site $Site
 	} else {
 		Write-Error "No TermSet Found. Now exiting!"
 		$Site.Dispose()
@@ -79,6 +136,10 @@ function Import-SPTaxonomy {
 	}
 	
 	if ($objImport.Webs) {
+		$objImport.Webs | % {
+			$Web = $_
+			Import-Web -Web $Web
+		}
 	} else {
 		Write-Error "No Webs Found. Now exiting!"
 		$Site.Dispose()
@@ -202,3 +263,4 @@ function Export-SPTaxonomy {
 #endregion
 
 # Export-SPTaxonomy -SiteUrl http://qa.oakgov.com/health -TermSetName "Health Tags" -OutputXmlPath D:\health-tags.xml
+Import-SPTaxonomy -SiteUrl http://six.sp-dev.us -Path E:\health-tags.xml
