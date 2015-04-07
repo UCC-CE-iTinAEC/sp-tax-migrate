@@ -86,7 +86,7 @@ function Import-PageTags {
 		if ([Microsoft.SharePoint.Publishing.PublishingPage]::IsPublishingPage($File.Item)) {
 			$PubFile = [Microsoft.SharePoint.Publishing.PublishingPage]::GetPublishingPage($File.Item)
 			$Item = $File.Item
-			if ($Item.
+#			if ($Item.
 		}
 	}
 	
@@ -151,10 +151,12 @@ function Import-SPTaxonomy {
 #endregion
 
 #region Export Methods
-function Get-SPTagsFromPage {
+function Get-SPTagsFromItem {
 	param(
 		[Parameter(Mandatory = $true)]
-		[Microsoft.SharePoint.SPListItem]$PageItem
+		[Microsoft.SharePoint.SPListItem]$Item,
+		[Parameter(Mandatory = $true)]
+		[string]$FieldName
 	)
 #	$tags = New-Object -TypeName Microsoft.SharePoint.Taxonomy.TaxonomyFieldValueCollection -ArgumentList $PageItem["Tags"]
 	
@@ -163,22 +165,51 @@ function Get-SPTagsFromPage {
 #	}
 	
 	
-	return $PageItem["Tags"]
+	return $Item[$FieldName]
+}
+
+function Get-SPDocumentsFromWeb {
+	param(
+		[Parameter(Mandatory = $true)]
+		[Microsoft.SharePoint.SPWeb]$Web,
+		[Parameter(Mandatory = $true)]
+		[string]$FieldName
+	)
+	
+	$docs = @()
+	
+	$dl = $Web.Lists.TryGetList("Documents")
+	
+	
+	if ($dl) {
+		$dl.Items | % {
+			Write-Host "$($_.Name): $($_[$FieldName])"
+			$myDoc = $_ | Select Id, Title, Url, Name
+			$myDoc | Add-Member -MemberType NoteProperty -Name "Tags" -Value (Get-SPTagsFromItem -Item $_ -FieldName $FieldName)
+			$docs += $myDoc
+		}
+	} else {
+		$docs = $null
+	}
+	
+	return $docs
 }
 
 function Get-SPPagesFromWeb {
 	param(
 		[Parameter(Mandatory = $true)]
-		[Microsoft.SharePoint.SPWeb]$Web
+		[Microsoft.SharePoint.SPWeb]$Web,
+		[Parameter(Mandatory = $false)]
+		[string]$FieldName = "Tags"
 	)
 	$pages = @()
 	
 	$pl = $Web.Lists.TryGetList("Pages")
 	if($pl) {
 		$pl.Items | % {
-			Write-Host "$($_.Name): $($_['Tags'])"
+			Write-Host "$($_.Name): $($_[$FieldName])"
 			$myPage = $_ | Select Id, Title, Url, Name
-			$myPage | Add-Member -MemberType NoteProperty -Name "Tags" -Value (Get-SPTagsFromPage -PageItem $_)
+			$myPage | Add-Member -MemberType NoteProperty -Name "Tags" -Value (Get-SPTagsFromItem -Item $_ -FieldName $FieldName)
 #			$myPage | Add-Member -MemberType NoteProperty -Name "Tags" -Value $_["Tags"]
 			$pages += $myPage
 		}
@@ -194,7 +225,7 @@ function Get-SPPagesFromWeb {
 function Export-SPTerms {
 	param(
 		[Parameter(Mandatory = $true)]
-		[Microsoft.SharePoint.Taxonomy.Generic.TaxonomyItemCollection`1[Microsoft.SharePoint.Taxonomy.Term]]$Terms
+		$Terms
 	)
 	$txTerms = @()
 	
@@ -213,13 +244,19 @@ function Export-SPTermSet {
 	param(
 		[Parameter(Mandatory = $true)]
 		[Microsoft.SharePoint.SPSite]$Site,
+		[Parameter(Mandatory = $false)]
+		[string]$GroupName,
 		[Parameter(Mandatory = $true)]
 		[string]$TermSetName
 	)
 	
 	$txSession = Get-SPTaxonomySession -Site $Site
-	$txSiteGroup = $txSession.DefaultSiteCollectionTermStore.GetSiteCollectionGroup($Site)
-	$txTermSet = $txSiteGroup.TermSets.Item($TermSetName)
+	if ([string]::IsNullOrEmpty($GroupName)) {
+		$txGroup = $txSession.DefaultSiteCollectionTermStore.GetSiteCollectionGroup($Site)
+	} else {
+		$txGroup = $txSession.DefaultSiteCollectionTermStore.Groups.Item($GroupName)
+	}
+	$txTermSet = $txGroup.TermSets.Item($TermSetName)
 	
 	$myTermSet = $txTermSet | Select Name
 	$myTermSet | Add-Member -MemberType NoteProperty -Name "Terms" -Value (Export-SPTerms -Terms $txTermSet.Terms)
@@ -230,26 +267,39 @@ function Export-SPTermSet {
 function Export-SPTaxonomy {
 	param(
     [Parameter(Mandatory = $true)]
-    [String]$SiteUrl,
+    [string]$SiteUrl,
     [Parameter(Mandatory = $true)]
-    [String]$TermSetName,
+    [string]$TermSetName,
     [Parameter(Mandatory = $true)]
-    [String]$OutputXmlPath
+    [string]$OutputXmlPath,
+	[switch]$DocumentLibrary,
+	[Parameter(Mandatory = $false)]
+	[string]$GroupName,
+	[Parameter(Mandatory = $false)]
+	[string]$FieldName = "TaxKeyword"
     )
 	
 	$webs = @()
 	$web = Get-SPWeb -Identity $SiteUrl
 	
-	$TermSet = Export-SPTermSet -Site $web.Site -TermSetName $TermSetName
+	$TermSet = Export-SPTermSet -Site $web.Site -GroupName $GroupName -TermSetName $TermSetName
 	
 	$myWeb = $web | Select Id, Title, ServerRelativeUrl
-	$myWeb | Add-Member -MemberType NoteProperty -Name "Pages" -Value (Get-SPPagesFromWeb -Web $web)
+	if($DocumentLibrary) {
+		$myWeb | Add-Member -MemberType NoteProperty -Name "Documents" -Value (Get-SPDocumentsFromWeb -Web $web -FieldName $FieldName)
+	}
+	else {
+		$myWeb | Add-Member -MemberType NoteProperty -Name "Pages" -Value (Get-SPPagesFromWeb -Web $web)
+	}
 	
 	$webs += $myWeb
 	
 	$web.Webs | % {
 		$myWeb = $_ | Select Id, Title, ServerRelativeUrl
-		$myWeb | Add-Member -MemberType NoteProperty -Name "Pages" -Value (Get-SPPagesFromWeb -Web $_)
+		if ($DocumentLibrary) {
+		} else {
+			$myWeb | Add-Member -MemberType NoteProperty -Name "Pages" -Value (Get-SPPagesFromWeb -Web $_)
+		}
 		$webs += $myWeb
 	}
 	
@@ -262,5 +312,5 @@ function Export-SPTaxonomy {
 
 #endregion
 
-# Export-SPTaxonomy -SiteUrl http://qa.oakgov.com/health -TermSetName "Health Tags" -OutputXmlPath D:\health-tags.xml
-Import-SPTaxonomy -SiteUrl http://six.sp-dev.us -Path E:\health-tags.xml
+Export-SPTaxonomy -SiteUrl http://www.advantageoakland.com/ResearchPortal -GroupName "EDCA" -TermSetName "EDCA Terms" -DocumentLibrary -OutputXmlPath D:\researchportal-terms.xml
+#Import-SPTaxonomy -SiteUrl http://six.sp-dev.us -Path E:\health-tags.xml
