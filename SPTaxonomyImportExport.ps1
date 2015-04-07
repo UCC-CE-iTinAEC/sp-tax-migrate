@@ -259,8 +259,9 @@ function Export-SPTermSet {
 	$txTermSet = $txGroup.TermSets.Item($TermSetName)
 	
 	$myTermSet = $txTermSet | Select Name
+	$myTermSet | Add-Member -MemberType NoteProperty -Name "GroupName" -Value $GroupName
 	$myTermSet | Add-Member -MemberType NoteProperty -Name "Terms" -Value (Export-SPTerms -Terms $txTermSet.Terms)
-	
+		
 	return $myTermSet
 }
 
@@ -297,6 +298,7 @@ function Export-SPTaxonomy {
 	$web.Webs | % {
 		$myWeb = $_ | Select Id, Title, ServerRelativeUrl
 		if ($DocumentLibrary) {
+			$myWeb | Add-Member -MemberType NoteProperty -Name "Documents" -Value (Get-SPDocumentsFromWeb -Web $web -FieldName $FieldName)
 		} else {
 			$myWeb | Add-Member -MemberType NoteProperty -Name "Pages" -Value (Get-SPPagesFromWeb -Web $_)
 		}
@@ -304,6 +306,7 @@ function Export-SPTaxonomy {
 	}
 	
 	$exportObj = New-Object PSObject
+	$exportObj | Add-Member -MemberType NoteProperty -Name "IsDocumentLibrary" -Value $DocumentLibrary
 	$exportObj | Add-Member -MemberType NoteProperty -Name "TermSet" -Value $TermSet
 	$exportObj | Add-Member -MemberType NoteProperty -Name "Webs" -Value $webs
 	
